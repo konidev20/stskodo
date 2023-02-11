@@ -15,3 +15,7 @@ For example:
 ```
 stskodo sts.amazonaws.com
 ```
+## Assume Role API
+```
+stskodo <sts-endpoint> --policy-file="<policy-file-name>" --role-arn="<role-to-assume>"
+```
