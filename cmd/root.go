@@ -6,14 +6,23 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
+	gonanoid "github.com/matoous/go-nanoid"
 	"github.com/spf13/cobra"
 )
+
+type Options struct {
+	PolicyFile string
+	RoleArn    string
+}
+
+var options Options
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -52,16 +61,46 @@ to quickly create a Cobra application.`,
 			return err
 		}
 
+		var credentials *sts.Credentials = &sts.Credentials{}
 		sts_client := sts.New(sess)
 
-		params := &sts.GetSessionTokenInput{}
+		if options.PolicyFile == "" {
+			params := &sts.GetSessionTokenInput{}
+			fmt.Println("Generating for Root")
+			req, resp := sts_client.GetSessionTokenRequest(params)
+			err = req.Send()
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+			credentials = resp.Credentials
+		} else {
+			fmt.Println("Assuming Role")
+			if options.RoleArn == "" {
+				return errors.New("rolearn not provided to assumeRole")
+			}
+			buffer, err := ioutil.ReadFile(options.PolicyFile)
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
 
-		req, resp := sts_client.GetSessionTokenRequest(params)
-		err = req.Send()
-		if err != nil {
-			fmt.Println(err)
+			roleArnSession := gonanoid.MustGenerate("abcdefghijklmnopqrstuvwxyz1234567890", 20)
+			policy := string(buffer)
+			params := &sts.AssumeRoleInput{
+				Policy:          &policy,
+				RoleArn:         &options.RoleArn,
+				RoleSessionName: &roleArnSession,
+			}
+
+			req, resp := sts_client.AssumeRoleRequest(params)
+			err = req.Send()
+			if err != nil {
+				fmt.Println(err)
+			}
+			credentials = resp.Credentials
 		}
-		fmt.Println(resp.Credentials)
+		fmt.Println(credentials)
 
 		return nil
 	},
@@ -77,13 +116,6 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.stskodo.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.Flags().StringVar(&options.PolicyFile, "policy-file", "", "the policy to be added to AssumeRole")
+	rootCmd.Flags().StringVar(&options.RoleArn, "role-arn", "", "the ARN of role to be assumed")
 }
